@@ -1,0 +1,29 @@
+[Unit]
+Description=RDIO-VOX Audio Monitoring Service
+After=network.target sound.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=rdio-vox
+Group=audio
+WorkingDirectory=/opt/rdio-vox
+ExecStart=/opt/rdio-vox/venv/bin/python /opt/rdio-vox/rdio_vox.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rdio-vox /var/log /tmp /etc/rdio-vox
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

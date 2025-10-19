@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDIO-VOX - Audio Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-broadcast"></i> RDIO-VOX
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <small>v1.0 by John F. Gonzales</small>
+                </span>
+                <a class="nav-link" href="#" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Status Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title">Service Status</h5>
+                        <div id="service-status" class="badge bg-secondary">Stopped</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title">Recording</h5>
+                        <div id="recording-status" class="badge bg-secondary">No</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title">Audio Level</h5>
+                        <div id="audio-level" class="h4 text-primary">-∞ dB</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title">VOX Threshold</h5>
+                        <div id="vox-threshold" class="h4 text-warning">0.1</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Control Panel</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <button id="start-btn" class="btn btn-success me-2" onclick="startService()">
+                                    <i class="bi bi-play-circle"></i> Start Service
+                                </button>
+                                <button id="stop-btn" class="btn btn-danger" onclick="stopService()">
+                                    <i class="bi bi-stop-circle"></i> Stop Service
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="auto-start">
+                                    <label class="form-check-label" for="auto-start">
+                                        Auto-start on boot
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio Level Visualization -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Audio Level Monitor</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="audio-visualizer" width="800" height="200"></canvas>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="vox-slider" class="form-label">VOX Threshold</label>
+                                    <input type="range" class="form-range" id="vox-slider" min="0" max="1" step="0.01" value="0.1">
+                                    <div class="form-text">Current: <span id="vox-value">0.1</span></div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="gain-slider" class="form-label">Input Gain</label>
+                                    <input type="range" class="form-range" id="gain-slider" min="0" max="2" step="0.1" value="1">
+                                    <div class="form-text">Current: <span id="gain-value">1.0</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="nav nav-tabs" id="config-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="server-tab" data-bs-toggle="tab" data-bs-target="#server" type="button" role="tab">
+                                    Server Settings
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="audio-tab" data-bs-toggle="tab" data-bs-target="#audio" type="button" role="tab">
+                                    Audio Settings
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="metadata-tab" data-bs-toggle="tab" data-bs-target="#metadata" type="button" role="tab">
+                                    Metadata
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="settings-tab" data-bs-toggle="tab" data-bs-target="#settings" type="button" role="tab">
+                                    Settings
+                                </button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="config-tabs-content">
+                            <!-- Server Settings -->
+                            <div class="tab-pane fade show active" id="server" role="tabpanel">
+                                <form id="server-form" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="server-url" class="form-label">Server URL</label>
+                                                <input type="url" class="form-control" id="server-url" placeholder="https://rdio-scanner.example.com">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="api-key" class="form-label">API Key</label>
+                                                <input type="password" class="form-control" id="api-key" placeholder="Enter API key">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Save Server Settings</button>
+                                </form>
+                            </div>
+
+                            <!-- Audio Settings -->
+                            <div class="tab-pane fade" id="audio" role="tabpanel">
+                                <form id="audio-form" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="audio-device" class="form-label">Audio Device</label>
+                                                <select class="form-select" id="audio-device">
+                                                    <option value="">Loading devices...</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="sample-rate" class="form-label">Sample Rate</label>
+                                                <select class="form-select" id="sample-rate">
+                                                    <option value="44100">44.1 kHz</option>
+                                                    <option value="48000">48 kHz</option>
+                                                    <option value="22050">22.05 kHz</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="channels" class="form-label">Channels</label>
+                                                <select class="form-select" id="channels">
+                                                    <option value="1">Mono</option>
+                                                    <option value="2">Stereo</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="vox-threshold-input" class="form-label">VOX Threshold</label>
+                                                <input type="number" class="form-control" id="vox-threshold-input" min="0" max="1" step="0.01" value="0.1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Save Audio Settings</button>
+                                </form>
+                            </div>
+
+                            <!-- Metadata -->
+                            <div class="tab-pane fade" id="metadata" role="tabpanel">
+                                <form id="metadata-form" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="frequency" class="form-label">Frequency (Hz)</label>
+                                                <input type="number" class="form-control" id="frequency" placeholder="774031250">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="source" class="form-label">Source ID</label>
+                                                <input type="number" class="form-control" id="source" placeholder="4424000">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="system" class="form-label">System ID</label>
+                                                <input type="number" class="form-control" id="system" placeholder="11">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="system-label" class="form-label">System Label</label>
+                                                <input type="text" class="form-control" id="system-label" placeholder="RSP25MTL">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="talkgroup" class="form-label">Talkgroup ID</label>
+                                                <input type="number" class="form-control" id="talkgroup" placeholder="54241">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="talkgroup-group" class="form-label">Talkgroup Group</label>
+                                                <input type="text" class="form-control" id="talkgroup-group" placeholder="Fire">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="talkgroup-label" class="form-label">Talkgroup Label</label>
+                                                <input type="text" class="form-control" id="talkgroup-label" placeholder="TDB A1">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="talkgroup-tag" class="form-label">Talkgroup Tag</label>
+                                                <input type="text" class="form-control" id="talkgroup-tag" placeholder="Fire dispatch">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Save Metadata</button>
+                                </form>
+                            </div>
+
+                            <!-- Settings -->
+                            <div class="tab-pane fade" id="settings" role="tabpanel">
+                                <form id="settings-form" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="current-password" class="form-label">Current Password</label>
+                                                <input type="password" class="form-control" id="current-password" placeholder="Enter current password">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="new-password" class="form-label">New Password</label>
+                                                <input type="password" class="form-control" id="new-password" placeholder="Enter new password">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="confirm-password" class="form-label">Confirm New Password</label>
+                                                <input type="password" class="form-control" id="confirm-password" placeholder="Confirm new password">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="web-port" class="form-label">Web Server Port</label>
+                                                <input type="number" class="form-control" id="web-port" min="1024" max="65535" placeholder="8080">
+                                                <div class="form-text">Port range: 1024-65535</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">&nbsp;</label>
+                                                <div class="form-text">
+                                                    Password must be at least 6 characters long.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">&nbsp;</label>
+                                                <div class="alert alert-warning" role="alert">
+                                                    <i class="bi bi-exclamation-triangle"></i>
+                                                    <strong>Warning:</strong> Changing the port requires a service restart.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="toast" class="toast" role="alert">
+            <div class="toast-header">
+                <strong class="me-auto">RDIO-VOX</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toast-body">
+                <!-- Toast message will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
