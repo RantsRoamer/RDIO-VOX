@@ -163,11 +163,6 @@ class AudioMonitor:
                     else:
                         db_level = -100
                     
-                    # Debug: Log audio levels occasionally
-                    if not hasattr(self, 'last_debug_time') or time.time() - self.last_debug_time > 5.0:
-                        logger.info(f"Audio level: {rms:.4f}, threshold: {vox_threshold}, dB: {db_level:.1f}")
-                        self.last_debug_time = time.time()
-                    
                     # Check VOX threshold
                     if rms > vox_threshold and not self.is_recording:
                         logger.info(f"VOX triggered: {rms:.4f} > {vox_threshold}")
