@@ -524,7 +524,8 @@ class ConfigManager:
             'talkgroup_tag': '',
             'web_password': 'admin',
             'web_password_hash': generate_password_hash('admin'),
-            'web_port': 8080
+            'web_port': 8080,
+            'auto_start': False
         }
         
         try:
@@ -740,9 +741,14 @@ if __name__ == '__main__':
     os.makedirs('static/css', exist_ok=True)
     os.makedirs('static/js', exist_ok=True)
     
-    # Get port from configuration
+    # Get configuration
     config = config_manager.get_config()
     port = config.get('web_port', 8080)
+    
+    # Start monitoring if auto-start is enabled
+    if config.get('auto_start', False):
+        logger.info("Auto-start enabled, starting audio monitoring...")
+        audio_monitor.start_monitoring()
     
     # Start the service
     logger.info(f"Starting RDIO-VOX v{VERSION} by {AUTHOR} on port {port}")
