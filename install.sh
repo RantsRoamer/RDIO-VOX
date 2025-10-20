@@ -117,10 +117,47 @@ chmod 644 /etc/systemd/system/rdio-vox.service
 # Reload systemd
 systemctl daemon-reload
 
-echo -e "${YELLOW}Creating initial configuration...${NC}"
+echo -e "${YELLOW}Checking configuration...${NC}"
 
-# Create initial configuration
-python3 -c "
+# Check if config file exists
+if [ -f "$CONFIG_DIR/config.json" ]; then
+    echo -e "${YELLOW}Existing configuration found.${NC}"
+    read -p "Do you want to keep the existing configuration? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${GREEN}Keeping existing configuration.${NC}"
+        # Check if auto_start exists in current config
+        if ! grep -q "auto_start" "$CONFIG_DIR/config.json"; then
+            echo -e "${YELLOW}Adding auto_start setting to existing configuration...${NC}"
+            # Create a backup
+            cp "$CONFIG_DIR/config.json" "$CONFIG_DIR/config.json.bak"
+            # Add auto_start setting
+            python3 -c "
+import json
+with open('$CONFIG_DIR/config.json', 'r') as f:
+    config = json.load(f)
+config['auto_start'] = False
+with open('$CONFIG_DIR/config.json', 'w') as f:
+    json.dump(config, f, indent=2)
+"
+            echo -e "${GREEN}Configuration updated with auto_start setting.${NC}"
+            echo -e "${YELLOW}Backup saved as config.json.bak${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Creating new configuration...${NC}"
+        # Create backup of old config
+        cp "$CONFIG_DIR/config.json" "$CONFIG_DIR/config.json.bak"
+        echo -e "${YELLOW}Backup of old configuration saved as config.json.bak${NC}"
+        CREATE_NEW=true
+    fi
+else
+    echo -e "${YELLOW}No configuration found. Creating new configuration...${NC}"
+    CREATE_NEW=true
+fi
+
+if [ "$CREATE_NEW" = true ]; then
+    # Create initial configuration
+    python3 -c "
 import json
 from werkzeug.security import generate_password_hash
 
@@ -141,12 +178,16 @@ config = {
     'talkgroup_tag': '',
     'web_password': 'admin',
     'web_password_hash': generate_password_hash('admin'),
-    'web_port': 8080
+    'web_port': 8080,
+    'auto_start': False
 }
 
 with open('$CONFIG_DIR/config.json', 'w') as f:
     json.dump(config, f, indent=2)
 "
+    echo -e "${GREEN}New configuration created with default settings.${NC}"
+    echo -e "${YELLOW}Default web interface password is: admin${NC}"
+fi
 
 chown "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG_DIR/config.json"
 chmod 600 "$CONFIG_DIR/config.json"
