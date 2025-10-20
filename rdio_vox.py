@@ -521,8 +521,6 @@ class ConfigManager:
             'talkgroup_group': '',
             'talkgroup_label': '',
             'talkgroup_tag': '',
-            'web_password': 'admin',
-            'web_password_hash': generate_password_hash('admin'),
             'web_port': 8080,
             'auto_start': False
         }
@@ -536,10 +534,17 @@ class ConfigManager:
                         if key not in config:
                             config[key] = value
                     return config
+            else:
+                # Only set default password for new installations
+                config = default_config.copy()
+                config['web_password_hash'] = generate_password_hash('admin')
+                return config
         except Exception as e:
             logger.error(f"Error loading config: {e}")
-        
-        return default_config
+            # If there's an error, return defaults with default password
+            config = default_config.copy()
+            config['web_password_hash'] = generate_password_hash('admin')
+            return config
     
     def save_config(self, config: Dict):
         """Save configuration to file"""
