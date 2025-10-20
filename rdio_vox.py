@@ -225,8 +225,16 @@ class AudioMonitor:
     def _upload_audio(self):
         """Upload recorded audio to Rdio Scanner server - using pi2rdio.pl method"""
         try:
+            # Safety check - don't upload if no data
+            if not self.audio_data:
+                logger.warning("No audio data to upload")
+                return
+                
             # Convert audio data to numpy array (matching pi2rdio.pl method)
             audio_bytes = b''.join(self.audio_data)
+            # Clear audio data immediately to prevent any chance of re-upload
+            self.audio_data = []
+            
             audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
             
             # Convert to 16-bit PCM exactly like pi2rdio.pl
