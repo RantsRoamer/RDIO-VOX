@@ -7,3 +7,4 @@ python-dotenv==1.0.0
 werkzeug==3.0.1
 psutil==5.9.6
 scipy==1.11.4
+sounddevice
