@@ -41,6 +41,10 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Set Werkzeug (Flask's web server) logging to WARNING level to suppress access logs
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 class AudioMonitor:
