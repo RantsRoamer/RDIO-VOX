@@ -45,18 +45,19 @@ echo -e "${YELLOW}Installing system dependencies...${NC}"
 if command -v apt-get &> /dev/null; then
     # Debian/Ubuntu
     apt-get update
-    apt-get install -y python3-pip python3-dev portaudio19-dev libasound2-dev
+    apt-get install -y python3-pip python3-dev portaudio19-dev libasound2-dev ffmpeg
 elif command -v yum &> /dev/null; then
     # CentOS/RHEL
-    yum install -y python3-pip python3-devel portaudio-devel alsa-lib-devel
+    yum install -y python3-pip python3-devel portaudio-devel alsa-lib-devel ffmpeg
 elif command -v pacman &> /dev/null; then
     # Arch Linux
-    pacman -S --noconfirm python-pip portaudio alsa-lib
+    pacman -S --noconfirm python-pip portaudio alsa-lib ffmpeg
 else
     echo -e "${YELLOW}Please install the following packages manually:${NC}"
     echo "- python3-pip"
     echo "- portaudio development libraries"
     echo "- alsa development libraries"
+    echo "- ffmpeg"
 fi
 
 echo -e "${YELLOW}Creating service user...${NC}"
