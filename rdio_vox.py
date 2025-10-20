@@ -24,6 +24,8 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
+from pydub import AudioSegment
+import io
 
 # Version information
 VERSION = "1.0"
@@ -241,33 +243,30 @@ class AudioMonitor:
             # Ensure we don't exceed the 16-bit range
             audio_16bit = np.clip(audio_array * 32767, -32768, 32767).astype(np.int16)
             
-            # Create WAV file using the exact same method as pi2rdio.pl
+            # Create temporary WAV file in memory
             timestamp = datetime.now().isoformat()
-            filename = f'audio_{timestamp}.wav'
+            filename = f'audio_{timestamp}.mp3'
             filepath = f"/tmp/{filename}"
             
-            # Use scipy.io.wavfile.write exactly like pi2rdio.pl
-            # This ensures proper sample rate and format
-            try:
-                import scipy.io.wavfile as wav
-                # Use the actual sample rate from the stream
-                actual_sample_rate = getattr(self, 'actual_sample_rate', int(self.config.get('sample_rate', 44100)))
-                logger.info(f'Using sample rate: {actual_sample_rate} Hz')
-                
-                wav.write(filepath, actual_sample_rate, audio_16bit)
-                logger.info(f'Audio saved to {filepath} (sample rate: {actual_sample_rate} Hz)')
-            except ImportError:
-                # Fallback to wave module with proper sample rate
-                import wave
-                actual_sample_rate = getattr(self, 'actual_sample_rate', int(self.config.get('sample_rate', 44100)))
-                channels = int(self.config.get('channels', 1))
-                
-                with wave.open(filepath, 'wb') as wav_file:
-                    wav_file.setnchannels(channels)
-                    wav_file.setsampwidth(2)  # 16-bit
-                    wav_file.setframerate(actual_sample_rate)
-                    wav_file.writeframes(audio_16bit.tobytes())
-                logger.info(f'Audio saved to {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
+            # Get audio parameters
+            actual_sample_rate = getattr(self, 'actual_sample_rate', int(self.config.get('sample_rate', 44100)))
+            channels = int(self.config.get('channels', 1))
+            
+            # Create WAV in memory first
+            wav_io = io.BytesIO()
+            import wave
+            with wave.open(wav_io, 'wb') as wav_file:
+                wav_file.setnchannels(channels)
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(actual_sample_rate)
+                wav_file.writeframes(audio_16bit.tobytes())
+            
+            # Convert to MP3
+            wav_io.seek(0)
+            audio = AudioSegment.from_wav(wav_io)
+            audio.export(filepath, format='mp3', parameters=["-q:a", "0"])  # Highest quality MP3
+            
+            logger.info(f'Audio saved as MP3: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
             # Test with smaller file first if current file is large
             file_size = os.path.getsize(filepath)
@@ -291,16 +290,22 @@ class AudioMonitor:
             api_key = self.config.get('api_key')
             
             # Create a tiny test file
-            test_filepath = "/tmp/tiny_test.wav"
-            test_filename = "tiny_test.wav"
+            test_filepath = "/tmp/tiny_test.mp3"
+            test_filename = "tiny_test.mp3"
             
-            # Create minimal WAV file (just header + tiny audio)
+            # Create minimal WAV in memory first
+            wav_io = io.BytesIO()
             import wave
-            with wave.open(test_filepath, 'wb') as wav_file:
+            with wave.open(wav_io, 'wb') as wav_file:
                 wav_file.setnchannels(1)
                 wav_file.setsampwidth(2)  # 16-bit
                 wav_file.setframerate(44100)
                 wav_file.writeframes(b'\x00\x00' * 100)  # 200 bytes of silence
+            
+            # Convert to MP3
+            wav_io.seek(0)
+            audio = AudioSegment.from_wav(wav_io)
+            audio.export(test_filepath, format='mp3', parameters=["-q:a", "0"])  # Highest quality MP3
             
             logger.info(f"Testing with tiny file: {os.path.getsize(test_filepath)} bytes")
             
@@ -409,7 +414,7 @@ class AudioMonitor:
             files = {
                 'audio': open(filepath, 'rb'),
                 'audioName': (None, filename),
-                'audioType': (None, 'audio/x-wav'),
+                'audioType': (None, 'audio/mpeg'),
                 'dateTime': (None, datetime.now().isoformat()),
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
