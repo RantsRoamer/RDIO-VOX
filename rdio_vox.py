@@ -136,15 +136,8 @@ class AudioMonitor:
             self.actual_sample_rate = sample_rate
             logger.info(f"PyAudio stream created with sample rate: {sample_rate} Hz")
             
-            # Apply input gain reduction to prevent clipping
-            input_gain = 0.5  # Reduce input level by half
-            
-            def input_callback(in_data, frame_count, time_info, status):
-                # Convert input data to numpy array
-                data = np.frombuffer(in_data, dtype=np.float32)
-                # Apply gain reduction
-                data = data * input_gain
-                return (data.tobytes(), pyaudio.paContinue)
+            # Create audio stream with input gain reduction
+            self.input_gain = 0.5  # Reduce input level by half to prevent clipping
             
             self.stream = self.pyaudio_instance.open(
                 format=pyaudio.paFloat32,
@@ -152,19 +145,21 @@ class AudioMonitor:
                 rate=sample_rate,
                 input=True,
                 input_device_index=device_index,
-                frames_per_buffer=chunk_size,
-                stream_callback=input_callback
+                frames_per_buffer=chunk_size
             )
             
             logger.info(f"Monitoring audio: device={device_index}, rate={sample_rate}, channels={channels}")
             
             while self.is_monitoring:
                 try:
-                    # With callback mode, we just need to check levels
+                    # Read and process audio data
                     try:
-                        # Get latest audio data from callback
+                        # Read audio data with overflow handling
                         data = self.stream.read(chunk_size, exception_on_overflow=False)
                         audio_array = np.frombuffer(data, dtype=np.float32)
+                        
+                        # Apply input gain reduction
+                        audio_array = audio_array * self.input_gain
                         
                         # Calculate RMS level for VOX
                         rms = np.sqrt(np.mean(audio_array**2))
@@ -172,18 +167,19 @@ class AudioMonitor:
                         
                         # Store audio data if recording
                         if self.is_recording:
-                            self.audio_data.append(data)
+                            self.audio_data.append(audio_array.tobytes())
                             # Log peak level periodically
                             if len(self.audio_data) % 10 == 0:
                                 peak = np.max(np.abs(audio_array))
-                                rms = np.sqrt(np.mean(audio_array**2))
                                 logger.info(f"Recording levels - peak: {peak:.4f}, RMS: {rms:.4f}")
                     except Exception as e:
                         logger.error(f"Error processing audio: {e}")
+                        if "Stream closed" in str(e):
+                            logger.info("Audio stream closed, stopping monitoring")
+                            self.is_monitoring = False
+                            break
                     
-                    # Calculate RMS level
-                    rms = np.sqrt(np.mean(audio_array**2))
-                    self.current_level = rms
+                    # RMS level already calculated above
                     
                     # Convert to dB
                     if rms > 0:
@@ -367,7 +363,7 @@ class AudioMonitor:
             # Create clean timestamp without colons or dots
             now = datetime.now()
             timestamp = now.strftime('%Y%m%d_%H%M%S_%f')[:17]  # Limit microseconds to 3 digits
-            filename = f'audio_{timestamp}.mp3'
+            filename = f'audio_{timestamp}.m4a'
             filepath = f"/tmp/{filename}"
             
             try:
@@ -400,33 +396,30 @@ class AudioMonitor:
                 verify_result = subprocess.run(verify_cmd, capture_output=True, text=True)
                 logger.info(f"Normalized audio info: {verify_result.stdout}")
                 
-                # Then convert to MP3 with forced mono and resampling
-                mp3_cmd = [
+                # Convert to M4A (AAC) with forced mono and resampling
+                m4a_cmd = [
                     "ffmpeg",
                     "-y",
                     "-i", norm_wav,
-                    "-codec:a", "libmp3lame",
-                    "-qscale:a", "0",  # Highest quality VBR
+                    "-c:a", "aac",
+                    "-b:a", "256k",  # High bitrate for quality
                     "-ar", str(actual_sample_rate),
                     "-ac", "1",  # Force mono
                     "-af", "aresample=resampler=soxr:precision=28:osf=s16,volume=3.0",  # High quality resampling and boost
-                    "-write_xing", "0",  # Disable VBR header for better compatibility
-                    "-id3v2_version", "3",  # Use ID3v2.3 for better compatibility
+                    "-movflags", "+faststart",  # Optimize for streaming
                     filepath
                 ]
-                subprocess.run(mp3_cmd, check=True, capture_output=True)
-                logger.info("MP3 conversion successful")
+                subprocess.run(m4a_cmd, check=True, capture_output=True)
+                logger.info("M4A conversion successful")
                 
-                # Verify the MP3 file
+                # Verify the M4A file
                 check_cmd = ["ffmpeg", "-v", "error", "-i", filepath, "-f", "null", "-"]
                 try:
                     subprocess.run(check_cmd, check=True, capture_output=True)
-                    logger.info("MP3 file verification successful")
+                    logger.info("M4A file verification successful")
                 except subprocess.CalledProcessError as e:
-                    logger.error(f"MP3 file verification failed: {e.stderr.decode()}")
+                    logger.error(f"M4A file verification failed: {e.stderr.decode()}")
                     return
-                subprocess.run(mp3_cmd, check=True, capture_output=True)
-                logger.info("MP3 conversion successful")
                 
                 # Verify the output file
                 file_info_cmd = ["ffprobe", "-v", "error", "-show_format", "-show_streams", filepath]
