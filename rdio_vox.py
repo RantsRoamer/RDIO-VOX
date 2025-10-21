@@ -319,27 +319,44 @@ class AudioMonitor:
             
             try:
                 import subprocess
-                # First normalize audio
+                # First analyze audio levels
+                analyze_cmd = [
+                    "ffmpeg",
+                    "-i", debug_wav,
+                    "-af", "loudnorm=I=-16:LRA=11:TP=-1.5:print_format=json",
+                    "-f", "null",
+                    "-"
+                ]
+                result = subprocess.run(analyze_cmd, capture_output=True, text=True)
+                logger.info(f"Audio analysis: {result.stderr}")
+
+                # Then normalize audio with measured values
                 norm_wav = "/tmp/norm_audio.wav"
                 norm_cmd = [
                     "ffmpeg",
                     "-y",
                     "-i", debug_wav,
-                    "-af", "loudnorm=I=-16:LRA=11:TP=-1.5,volume=2.0",  # Normalize and boost
+                    "-af", "compand=attacks=0.02:decays=0.05:points=-80/-80|-50/-10|0/0|20/20,loudnorm=I=-16:LRA=11:TP=-1.5,volume=3.0",  # Compression, normalization and boost
                     norm_wav
                 ]
                 subprocess.run(norm_cmd, check=True, capture_output=True)
                 logger.info("Audio normalization successful")
+
+                # Verify normalized audio
+                verify_cmd = ["ffprobe", "-v", "error", "-show_streams", "-of", "json", norm_wav]
+                verify_result = subprocess.run(verify_cmd, capture_output=True, text=True)
+                logger.info(f"Normalized audio info: {verify_result.stdout}")
                 
-                # Then convert to MP3
+                # Then convert to MP3 with forced mono and resampling
                 mp3_cmd = [
                     "ffmpeg",
                     "-y",
                     "-i", norm_wav,
                     "-codec:a", "libmp3lame",
-                    "-qscale:a", "2",  # High quality VBR
+                    "-qscale:a", "0",  # Highest quality VBR
                     "-ar", str(actual_sample_rate),
-                    "-ac", str(channels),
+                    "-ac", "1",  # Force mono
+                    "-af", "aresample=resampler=soxr:precision=28:osf=s16",  # High quality resampling
                     filepath
                 ]
                 subprocess.run(mp3_cmd, check=True, capture_output=True)
