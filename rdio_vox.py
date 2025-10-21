@@ -368,8 +368,9 @@ class AudioMonitor:
                 
             except Exception as e:
                 logger.error(f"FFmpeg processing failed: {e}")
-                # Fallback to direct MP3 export
-                audio.export(filepath, format='mp3', parameters=["-q:a", "0"])
+                # Fallback to direct MP3 export using AudioSegment
+                audio_segment = AudioSegment.from_wav(temp_wav)
+                audio_segment.export(filepath, format='mp3', parameters=["-q:a", "0"])
             finally:
                 # Clean up temporary files
                 try:
@@ -420,7 +421,7 @@ class AudioMonitor:
                 'audio': open(test_filepath, 'rb'),
                 'audioName': (None, test_filename),
                 'audioType': (None, 'audio/mpeg'),
-                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]),  # Local server time
+                'dateTime': (None, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # UTC time as required by Rdio Scanner API
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
@@ -475,7 +476,7 @@ class AudioMonitor:
                 'audio': ('test.wav', b'test audio data', 'audio/mpeg'),
                 'audioName': (None, 'test.wav'),
                 'audioType': (None, 'audio/mpeg'),
-                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]),  # Local server time
+                'dateTime': (None, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # UTC time as required by Rdio Scanner API
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
@@ -521,7 +522,7 @@ class AudioMonitor:
                 'audio': open(filepath, 'rb'),
                 'audioName': (None, filename),
                 'audioType': (None, 'audio/mp4'),  # Correct MIME type for M4A
-                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]),  # Local server time without Z suffix
+                'dateTime': (None, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # UTC time as required by Rdio Scanner API
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
