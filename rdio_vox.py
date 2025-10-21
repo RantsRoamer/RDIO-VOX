@@ -309,38 +309,9 @@ class AudioMonitor:
             # Scale to 16-bit range
             audio_16bit = (audio_array * 32767).astype(np.int16)
             
-            # Create temporary WAV file in memory
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:17]  # Local server time
-            filename = f'audio_{timestamp}.m4a'
-            filepath = f"/tmp/{filename}"
-            
             # Get audio parameters
             actual_sample_rate = getattr(self, 'actual_sample_rate', int(self.config.get('sample_rate', 44100)))
             channels = int(self.config.get('channels', 1))
-            
-            # Create WAV in memory first
-            wav_io = io.BytesIO()
-            import wave
-            try:
-                with wave.open(wav_io, 'wb') as wav_file:
-                    wav_file.setnchannels(channels)
-                    wav_file.setsampwidth(2)  # 16-bit
-                    wav_file.setframerate(actual_sample_rate)
-                    audio_bytes = audio_16bit.tobytes()
-                    if len(audio_bytes) == 0:
-                        logger.error("No audio data to write to WAV")
-                        return
-                    wav_file.writeframes(audio_bytes)
-                    logger.info(f"WAV file created: {wav_file.getnframes()} frames, {channels} channels, {actual_sample_rate} Hz")
-            except Exception as e:
-                logger.error(f"Error creating WAV file: {e}")
-                return
-            
-            # Create temporary WAV file
-            temp_wav = "/tmp/temp_audio.wav"
-            wav_io.seek(0)
-            with open(temp_wav, 'wb') as f:
-                f.write(wav_io.getvalue())
             
             # Create clean timestamp without colons or dots
             now = datetime.now()  # Local server time
@@ -350,35 +321,70 @@ class AudioMonitor:
             
             try:
                 import subprocess
-                # Convert directly to M4A (AAC)
+                # Create M4A directly from raw audio data using FFmpeg
+                # Use stdin to pipe raw audio data directly to FFmpeg
                 m4a_cmd = [
                     "ffmpeg",
-                    "-y",
-                    "-i", temp_wav,
-                    "-c:a", "aac",
-                    "-b:a", "128k",  # Standard bitrate for voice
-                    "-ar", "44100",  # Standard sample rate
-                    "-ac", "1",  # Force mono
-                    "-profile:a", "aac_low",  # Use AAC-LC for better compatibility
+                    "-y",  # Overwrite output file
+                    "-f", "s16le",  # Input format: signed 16-bit little-endian
+                    "-ar", str(actual_sample_rate),  # Sample rate
+                    "-ac", str(channels),  # Number of channels
+                    "-i", "pipe:0",  # Read from stdin
+                    "-c:a", "aac",  # Audio codec: AAC
+                    "-b:a", "128k",  # Bitrate: 128kbps (good for voice)
+                    "-profile:a", "aac_low",  # AAC-LC profile for better compatibility
                     "-movflags", "+faststart",  # Optimize for streaming
                     filepath
                 ]
-                subprocess.run(m4a_cmd, check=True, capture_output=True)
-                logger.info("M4A conversion successful")
+                
+                # Run FFmpeg with raw audio data piped to stdin
+                process = subprocess.Popen(m4a_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                stdout, stderr = process.communicate(input=audio_16bit.tobytes())
+                
+                if process.returncode == 0:
+                    logger.info(f"M4A file created successfully: {filename}")
+                    logger.info(f"Audio parameters: {actual_sample_rate} Hz, {channels} channels, {len(audio_16bit)} samples")
+                else:
+                    logger.error(f"FFmpeg failed with return code {process.returncode}")
+                    logger.error(f"FFmpeg stderr: {stderr.decode()}")
+                    raise Exception(f"FFmpeg failed: {stderr.decode()}")
                 
             except Exception as e:
-                logger.error(f"FFmpeg processing failed: {e}")
-                # Fallback to direct MP3 export using AudioSegment
-                audio_segment = AudioSegment.from_wav(temp_wav)
-                audio_segment.export(filepath, format='mp3', parameters=["-q:a", "0"])
-            finally:
-                # Clean up temporary files
+                logger.error(f"Direct M4A creation failed: {e}")
+                # Fallback: create temporary WAV and convert
+                logger.info("Falling back to WAV intermediate method")
                 try:
+                    # Create temporary WAV file as fallback
+                    temp_wav = "/tmp/temp_audio_fallback.wav"
+                    import wave
+                    with wave.open(temp_wav, 'wb') as wav_file:
+                        wav_file.setnchannels(channels)
+                        wav_file.setsampwidth(2)  # 16-bit
+                        wav_file.setframerate(actual_sample_rate)
+                        wav_file.writeframes(audio_16bit.tobytes())
+                    
+                    # Convert WAV to M4A
+                    fallback_cmd = [
+                        "ffmpeg",
+                        "-y",
+                        "-i", temp_wav,
+                        "-c:a", "aac",
+                        "-b:a", "128k",
+                        "-profile:a", "aac_low",
+                        "-movflags", "+faststart",
+                        filepath
+                    ]
+                    subprocess.run(fallback_cmd, check=True, capture_output=True)
+                    logger.info("Fallback M4A conversion successful")
+                    
+                    # Clean up temporary WAV file
                     os.remove(temp_wav)
-                except:
-                    pass
+                    
+                except Exception as fallback_error:
+                    logger.error(f"Fallback conversion also failed: {fallback_error}")
+                    raise
             
-            logger.info(f'Audio saved as MP3: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
+            logger.info(f'Audio saved as M4A: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
             # Upload to server using exact same method as pi2rdio.pl
             self._send_to_server(filepath, filename)
@@ -396,22 +402,36 @@ class AudioMonitor:
             api_key = self.config.get('api_key')
             
             # Create a tiny test file
-            test_filepath = "/tmp/tiny_test.mp3"
-            test_filename = "tiny_test.mp3"
+            test_filepath = "/tmp/tiny_test.m4a"
+            test_filename = "tiny_test.m4a"
             
-            # Create minimal WAV in memory first
-            wav_io = io.BytesIO()
-            import wave
-            with wave.open(wav_io, 'wb') as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(44100)
-                wav_file.writeframes(b'\x00\x00' * 100)  # 200 bytes of silence
+            # Create minimal raw audio data (silence)
+            import numpy as np
+            silence_samples = np.zeros(100, dtype=np.int16)  # 100 samples of silence
             
-            # Convert to MP3
-            wav_io.seek(0)
-            audio = AudioSegment.from_wav(wav_io)
-            audio.export(test_filepath, format='ipod', parameters=["-c:a", "aac", "-b:a", "192k"])  # High quality AAC
+            # Create M4A directly using FFmpeg
+            import subprocess
+            test_cmd = [
+                "ffmpeg",
+                "-y",
+                "-f", "s16le",
+                "-ar", "44100",
+                "-ac", "1",
+                "-i", "pipe:0",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-profile:a", "aac_low",
+                test_filepath
+            ]
+            
+            process = subprocess.Popen(test_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate(input=silence_samples.tobytes())
+            
+            if process.returncode != 0:
+                logger.error(f"Test file creation failed: {stderr.decode()}")
+                # Fallback to simple file creation
+                with open(test_filepath, 'wb') as f:
+                    f.write(b'test audio data')
             
             logger.info(f"Testing with tiny file: {os.path.getsize(test_filepath)} bytes")
             
@@ -420,7 +440,7 @@ class AudioMonitor:
             files_pi2rdio = {
                 'audio': open(test_filepath, 'rb'),
                 'audioName': (None, test_filename),
-                'audioType': (None, 'audio/mpeg'),
+                'audioType': (None, 'audio/mp4'),  # M4A format
                 'dateTime': (None, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # UTC time as required by Rdio Scanner API
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
@@ -473,9 +493,9 @@ class AudioMonitor:
             
             # Test with actual configuration
             test_files = {
-                'audio': ('test.wav', b'test audio data', 'audio/mpeg'),
-                'audioName': (None, 'test.wav'),
-                'audioType': (None, 'audio/mpeg'),
+                'audio': ('test.m4a', b'test audio data', 'audio/mp4'),
+                'audioName': (None, 'test.m4a'),
+                'audioType': (None, 'audio/mp4'),  # M4A format
                 'dateTime': (None, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # UTC time as required by Rdio Scanner API
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
