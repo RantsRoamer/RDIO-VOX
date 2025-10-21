@@ -150,12 +150,27 @@ class AudioMonitor:
             while self.is_monitoring:
                 try:
                     # Read audio data
-                    data = self.stream.read(chunk_size, exception_on_overflow=False)
-                    audio_array = np.frombuffer(data, dtype=np.float32)
-                    
-                    # Store audio data if recording
-                    if self.is_recording:
-                        self.audio_data.append(data)
+                    try:
+                        data = self.stream.read(chunk_size, exception_on_overflow=False)
+                        audio_array = np.frombuffer(data, dtype=np.float32)
+                        
+                        # Check for completely silent audio
+                        if np.max(np.abs(audio_array)) < 0.0001:
+                            logger.debug("Warning: Near-silent audio chunk detected")
+                        
+                        # Store audio data if recording
+                        if self.is_recording:
+                            # Verify data is valid
+                            if len(data) != chunk_size * 4:  # 4 bytes per float32
+                                logger.warning(f"Unexpected audio chunk size: {len(data)} bytes")
+                            else:
+                                self.audio_data.append(data)
+                                # Log peak level periodically
+                                if len(self.audio_data) % 10 == 0:
+                                    peak = np.max(np.abs(audio_array))
+                                    logger.info(f"Recording peak level: {peak:.4f}")
+                    except Exception as e:
+                        logger.error(f"Error reading audio chunk: {e}")
                     
                     # Calculate RMS level
                     rms = np.sqrt(np.mean(audio_array**2))
@@ -247,11 +262,31 @@ class AudioMonitor:
                 return
                 
             # Convert audio data to numpy array (matching pi2rdio.pl method)
+            if not self.audio_data:
+                logger.error("No audio data to process")
+                return
+                
             audio_bytes = b''.join(self.audio_data)
+            # Verify we have enough audio data
+            min_bytes = 1024 * 4  # At least 1024 samples
+            if len(audio_bytes) < min_bytes:
+                logger.error(f"Audio data too short: {len(audio_bytes)} bytes")
+                return
+                
+            logger.info(f"Processing {len(audio_bytes)} bytes of audio data")
+            
             # Clear audio data immediately to prevent any chance of re-upload
             self.audio_data = []
             
             audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
+            
+            # Verify audio data isn't silent or corrupted
+            peak = np.max(np.abs(audio_array))
+            mean = np.mean(np.abs(audio_array))
+            if peak < 0.001:
+                logger.error(f"Audio data appears to be silent: peak={peak:.6f}, mean={mean:.6f}")
+                return
+            logger.info(f"Audio data verified: peak={peak:.4f}, mean={mean:.4f}")
             
             # Log original audio stats
             logger.info(f"Original audio - min: {np.min(audio_array):.4f}, max: {np.max(audio_array):.4f}, mean: {np.mean(np.abs(audio_array)):.4f}")
@@ -285,11 +320,20 @@ class AudioMonitor:
             # Create WAV in memory first
             wav_io = io.BytesIO()
             import wave
-            with wave.open(wav_io, 'wb') as wav_file:
-                wav_file.setnchannels(channels)
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(actual_sample_rate)
-                wav_file.writeframes(audio_16bit.tobytes())
+            try:
+                with wave.open(wav_io, 'wb') as wav_file:
+                    wav_file.setnchannels(channels)
+                    wav_file.setsampwidth(2)  # 16-bit
+                    wav_file.setframerate(actual_sample_rate)
+                    audio_bytes = audio_16bit.tobytes()
+                    if len(audio_bytes) == 0:
+                        logger.error("No audio data to write to WAV")
+                        return
+                    wav_file.writeframes(audio_bytes)
+                    logger.info(f"WAV file created: {wav_file.getnframes()} frames, {channels} channels, {actual_sample_rate} Hz")
+            except Exception as e:
+                logger.error(f"Error creating WAV file: {e}")
+                return
             
             # Log WAV file stats
             wav_io.seek(0)
