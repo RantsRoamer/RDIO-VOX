@@ -45,6 +45,9 @@ class RDIOVOXApp {
             document.getElementById('vox-slider').value = config.vox_threshold || 0.1;
             document.getElementById('vox-value').textContent = config.vox_threshold || 0.1;
             document.getElementById('vox-threshold').textContent = config.vox_threshold || 0.1;
+            
+            document.getElementById('gain-slider').value = config.input_gain || 0.5;
+            document.getElementById('gain-value').textContent = config.input_gain || 0.5;
 
             // Set auto-start checkbox
             document.getElementById('auto-start').checked = config.auto_start || false;
@@ -139,7 +142,8 @@ class RDIOVOXApp {
             device_index: parseInt(document.getElementById('audio-device').value),
             sample_rate: parseInt(document.getElementById('sample-rate').value),
             channels: parseInt(document.getElementById('channels').value),
-            vox_threshold: parseFloat(document.getElementById('vox-threshold-input').value)
+            vox_threshold: parseFloat(document.getElementById('vox-threshold-input').value),
+            input_gain: parseFloat(document.getElementById('gain-slider').value)
         };
 
         await this.saveConfig(config);
@@ -166,27 +170,51 @@ class RDIOVOXApp {
         const confirmPassword = document.getElementById('confirm-password').value;
         const webPort = document.getElementById('web-port').value;
 
+        // Validate password input
+        if (currentPassword && newPassword && confirmPassword) {
+            if (newPassword !== confirmPassword) {
+                this.showToast('New passwords do not match', 'error');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                this.showToast('Password must be at least 6 characters long', 'error');
+                return;
+            }
+        }
+
         try {
-            const response = await fetch('/api/change-settings', {
+            // Use the main config endpoint for consistency
+            const config = {};
+            
+            // Add password if provided
+            if (currentPassword && newPassword && confirmPassword) {
+                config.web_password = newPassword;
+            }
+            
+            // Add web port if provided
+            if (webPort) {
+                const port = parseInt(webPort);
+                if (port < 1024 || port > 65535) {
+                    this.showToast('Port must be between 1024 and 65535', 'error');
+                    return;
+                }
+                config.web_port = port;
+            }
+
+            const response = await fetch('/api/config', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    current_password: currentPassword,
-                    new_password: newPassword,
-                    confirm_password: confirmPassword,
-                    web_port: webPort ? parseInt(webPort) : null
-                })
+                body: JSON.stringify(config)
             });
 
-            const result = await response.json();
-
             if (response.ok) {
-                this.showToast(result.message, 'success');
+                this.showToast('Settings saved successfully', 'success');
 
                 // Show restart warning if port changed
-                if (result.restart_required) {
+                if (webPort) {
                     setTimeout(() => {
                         this.showToast('Please restart the service for port changes to take effect', 'warning');
                     }, 2000);
@@ -197,7 +225,8 @@ class RDIOVOXApp {
                 document.getElementById('new-password').value = '';
                 document.getElementById('confirm-password').value = '';
             } else {
-                this.showToast(result.message, 'error');
+                const result = await response.json();
+                this.showToast(result.message || 'Error saving settings', 'error');
             }
         } catch (error) {
             console.error('Error changing settings:', error);

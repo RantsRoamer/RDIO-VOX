@@ -136,8 +136,8 @@ class AudioMonitor:
             self.actual_sample_rate = sample_rate
             logger.info(f"PyAudio stream created with sample rate: {sample_rate} Hz")
             
-            # Create audio stream with input gain reduction
-            self.input_gain = 0.5  # Reduce input level by half to prevent clipping
+            # Create audio stream with configurable input gain
+            self.input_gain = float(self.config.get('input_gain', 0.5))  # Configurable input gain
             
             self.stream = self.pyaudio_instance.open(
                 format=pyaudio.paFloat32,
@@ -637,6 +637,7 @@ class ConfigManager:
             'sample_rate': 44100,
             'channels': 1,
             'vox_threshold': 0.1,
+            'input_gain': 0.5,
             'frequency': '',
             'source': '',
             'system': '',
@@ -745,12 +746,30 @@ def api_config():
         new_config = request.json
         # Get current config and merge with new values
         current_config = config_manager.get_config()
-        current_config.update(new_config)
         
-        # Hash password if provided
-        if 'web_password' in current_config and current_config['web_password']:
-            current_config['web_password_hash'] = generate_password_hash(current_config['web_password'])
-            current_config.pop('web_password', None)
+        # Handle password change with validation
+        if 'web_password' in new_config and new_config['web_password']:
+            # Validate password length
+            if len(new_config['web_password']) < 6:
+                return jsonify({'status': 'error', 'message': 'Password must be at least 6 characters long'}), 400
+            
+            # Hash the new password
+            current_config['web_password_hash'] = generate_password_hash(new_config['web_password'])
+            # Remove the plain password from the config
+            new_config.pop('web_password', None)
+        
+        # Handle web port validation
+        if 'web_port' in new_config:
+            try:
+                port = int(new_config['web_port'])
+                if port < 1024 or port > 65535:
+                    return jsonify({'status': 'error', 'message': 'Port must be between 1024 and 65535'}), 400
+                new_config['web_port'] = port
+            except (ValueError, TypeError):
+                return jsonify({'status': 'error', 'message': 'Invalid port number'}), 400
+        
+        # Merge with current config
+        current_config.update(new_config)
         
         config_manager.save_config(current_config)
         audio_monitor.config = config_manager.get_config()
@@ -797,71 +816,6 @@ def api_control():
     
     return jsonify({'status': 'success'})
 
-@app.route('/api/change-settings', methods=['POST'])
-@login_required
-def api_change_settings():
-    """Change web interface settings (password and port)"""
-    try:
-        data = request.json
-        current_password = data.get('current_password')
-        new_password = data.get('new_password')
-        confirm_password = data.get('confirm_password')
-        web_port = data.get('web_port')
-        
-        # Get current config
-        config = config_manager.get_config()
-        changes_made = []
-        
-        # Handle password change if provided
-        if current_password and new_password and confirm_password:
-            # Validate password input
-            if new_password != confirm_password:
-                return jsonify({'status': 'error', 'message': 'New passwords do not match'}), 400
-            
-            if len(new_password) < 6:
-                return jsonify({'status': 'error', 'message': 'Password must be at least 6 characters long'}), 400
-            
-            current_hash = config.get('web_password_hash', '')
-            
-            # Verify current password
-            if not check_password_hash(current_hash, current_password):
-                return jsonify({'status': 'error', 'message': 'Current password is incorrect'}), 400
-            
-            # Update password
-            config['web_password_hash'] = generate_password_hash(new_password)
-            changes_made.append('password')
-            logger.info("Web interface password changed")
-        
-        # Handle port change if provided
-        if web_port is not None:
-            try:
-                port = int(web_port)
-                if port < 1024 or port > 65535:
-                    return jsonify({'status': 'error', 'message': 'Port must be between 1024 and 65535'}), 400
-                
-                config['web_port'] = port
-                changes_made.append('port')
-                logger.info(f"Web server port changed to {port}")
-            except ValueError:
-                return jsonify({'status': 'error', 'message': 'Invalid port number'}), 400
-        
-        # Save config if changes were made
-        if changes_made:
-            config_manager.save_config(config)
-            
-            # Check if port changed and warn about restart
-            if 'port' in changes_made:
-                message = f"Settings saved successfully. Port changed to {web_port}. Service restart required for port change to take effect."
-            else:
-                message = "Settings saved successfully."
-            
-            return jsonify({'status': 'success', 'message': message, 'restart_required': 'port' in changes_made})
-        else:
-            return jsonify({'status': 'error', 'message': 'No changes provided'}), 400
-        
-    except Exception as e:
-        logger.error(f"Error changing settings: {e}")
-        return jsonify({'status': 'error', 'message': 'Failed to change settings'}), 500
 
 if __name__ == '__main__':
     # Create templates directory
