@@ -305,44 +305,61 @@ class AudioMonitor:
             # Log audio segment stats
             logger.info(f"AudioSegment stats - duration: {len(audio)/1000.0:.2f}s, channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
             
-            # First export as WAV
-            temp_wav = "/tmp/temp_audio.wav"
-            audio.export(temp_wav, format="wav")
+            # Save original WAV for debugging
+            debug_wav = "/tmp/debug_audio.wav"
+            audio.export(debug_wav, format="wav")
+            logger.info(f"Saved debug WAV file: {debug_wav}")
             
-            # Convert to M4A using direct ffmpeg command
+            # Create MP3 file instead of M4A
+            timestamp = datetime.now().isoformat()
+            filename = f'audio_{timestamp}.mp3'
+            filepath = f"/tmp/{filename}"
+            
             try:
                 import subprocess
-                ffmpeg_cmd = [
+                # First normalize audio
+                norm_wav = "/tmp/norm_audio.wav"
+                norm_cmd = [
                     "ffmpeg",
-                    "-y",  # Overwrite output file if it exists
-                    "-i", temp_wav,
-                    "-c:a", "aac",
-                    "-b:a", "192k",
+                    "-y",
+                    "-i", debug_wav,
+                    "-af", "loudnorm=I=-16:LRA=11:TP=-1.5,volume=2.0",  # Normalize and boost
+                    norm_wav
+                ]
+                subprocess.run(norm_cmd, check=True, capture_output=True)
+                logger.info("Audio normalization successful")
+                
+                # Then convert to MP3
+                mp3_cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-i", norm_wav,
+                    "-codec:a", "libmp3lame",
+                    "-qscale:a", "2",  # High quality VBR
                     "-ar", str(actual_sample_rate),
                     "-ac", str(channels),
-                    "-af", "volume=2.0",  # Increase volume boost
                     filepath
                 ]
-                subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
-                logger.info("FFmpeg conversion successful")
+                subprocess.run(mp3_cmd, check=True, capture_output=True)
+                logger.info("MP3 conversion successful")
+                
+                # Verify the output file
+                file_info_cmd = ["ffmpeg", "-i", filepath]
+                result = subprocess.run(file_info_cmd, capture_output=True, text=True)
+                logger.info(f"Output file info: {result.stderr}")
+                
             except Exception as e:
-                logger.error(f"FFmpeg conversion failed: {e}")
-                # Fallback to pydub if ffmpeg direct command fails
-                audio.export(filepath, format='ipod', parameters=[
-                    "-c:a", "aac",
-                    "-b:a", "192k",
-                    "-ar", str(actual_sample_rate),
-                    "-ac", str(channels),
-                    "-af", "volume=2.0"
-                ])
+                logger.error(f"FFmpeg processing failed: {e}")
+                # Fallback to direct MP3 export
+                audio.export(filepath, format='mp3', parameters=["-q:a", "0"])
             finally:
-                # Clean up temporary WAV file
+                # Clean up temporary files
                 try:
-                    os.remove(temp_wav)
+                    os.remove(norm_wav)
                 except:
                     pass
             
-            logger.info(f'Audio saved as M4A: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
+            logger.info(f'Audio saved as MP3: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
             # Upload to server using exact same method as pi2rdio.pl
             self._send_to_server(filepath, filename)
@@ -484,7 +501,7 @@ class AudioMonitor:
             files = {
                 'audio': open(filepath, 'rb'),
                 'audioName': (None, filename),
-                'audioType': (None, 'audio/mp4'),
+                'audioType': (None, 'audio/mpeg'),
                 'dateTime': (None, datetime.now().isoformat()),
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
