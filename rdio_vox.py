@@ -313,7 +313,7 @@ class AudioMonitor:
             # Create MP3 file instead of M4A
             # Create clean timestamp without colons or dots
             now = datetime.now()
-            timestamp = now.strftime('%Y%m%d_%H%M%S_%f')
+            timestamp = now.strftime('%Y%m%d_%H%M%S_%f')[:17]  # Limit microseconds to 3 digits
             filename = f'audio_{timestamp}.mp3'
             filepath = f"/tmp/{filename}"
             
@@ -346,9 +346,9 @@ class AudioMonitor:
                 logger.info("MP3 conversion successful")
                 
                 # Verify the output file
-                file_info_cmd = ["ffmpeg", "-i", filepath]
+                file_info_cmd = ["ffprobe", "-v", "error", "-show_format", "-show_streams", filepath]
                 result = subprocess.run(file_info_cmd, capture_output=True, text=True)
-                logger.info(f"Output file info: {result.stderr}")
+                logger.info(f"Output file info: {result.stdout}")
                 
             except Exception as e:
                 logger.error(f"FFmpeg processing failed: {e}")
