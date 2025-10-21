@@ -340,23 +340,11 @@ class AudioMonitor:
                 logger.error(f"Error creating WAV file: {e}")
                 return
             
-            # Log WAV file stats
-            wav_io.seek(0)
-            with wave.open(wav_io, 'rb') as wav_check:
-                wav_frames = wav_check.readframes(wav_check.getnframes())
-                wav_array = np.frombuffer(wav_frames, dtype=np.int16)
-                logger.info(f"WAV file stats - min: {np.min(wav_array)}, max: {np.max(wav_array)}, mean: {np.mean(np.abs(wav_array)):.2f}")
-            
-            # Convert to M4A (AAC)
-            wav_io.seek(0)
-            audio = AudioSegment.from_wav(wav_io)
-            
-            # Log audio segment stats
-            logger.info(f"AudioSegment stats - duration: {len(audio)/1000.0:.2f}s, channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
-            
             # Create temporary WAV file
             temp_wav = "/tmp/temp_audio.wav"
-            audio.export(temp_wav, format="wav")
+            wav_io.seek(0)
+            with open(temp_wav, 'wb') as f:
+                f.write(wav_io.getvalue())
             
             # Create clean timestamp without colons or dots
             now = datetime.now()
@@ -381,20 +369,6 @@ class AudioMonitor:
                 ]
                 subprocess.run(m4a_cmd, check=True, capture_output=True)
                 logger.info("M4A conversion successful")
-                
-                # Verify the M4A file
-                check_cmd = ["ffmpeg", "-v", "error", "-i", filepath, "-f", "null", "-"]
-                try:
-                    subprocess.run(check_cmd, check=True, capture_output=True)
-                    logger.info("M4A file verification successful")
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"M4A file verification failed: {e.stderr.decode()}")
-                    return
-                
-                # Verify the output file
-                file_info_cmd = ["ffprobe", "-v", "error", "-show_format", "-show_streams", filepath]
-                result = subprocess.run(file_info_cmd, capture_output=True, text=True)
-                logger.info(f"Output file info: {result.stdout}")
                 
             except Exception as e:
                 logger.error(f"FFmpeg processing failed: {e}")
