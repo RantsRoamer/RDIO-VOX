@@ -253,11 +253,25 @@ class AudioMonitor:
             
             audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
             
-            # Normalize and scale to 16-bit range
-            # First ensure audio is in [-1.0, 1.0] range
-            normalized = np.clip(audio_array, -1.0, 1.0)
-            # Then scale to 16-bit range and convert
-            audio_16bit = (normalized * 32767).astype(np.int16)
+            # Log original audio stats
+            logger.info(f"Original audio - min: {np.min(audio_array):.4f}, max: {np.max(audio_array):.4f}, mean: {np.mean(np.abs(audio_array)):.4f}")
+            
+            # Check if audio is too quiet
+            if np.max(np.abs(audio_array)) < 0.01:
+                logger.warning("Audio levels very low, applying gain")
+                gain = 1.0 / np.max(np.abs(audio_array)) if np.max(np.abs(audio_array)) > 0 else 1.0
+                audio_array = audio_array * min(gain, 100.0)  # Limit gain to 100x
+            
+            # Normalize to [-1.0, 1.0] range
+            max_val = np.max(np.abs(audio_array))
+            if max_val > 0:
+                audio_array = audio_array / max_val
+            
+            # Log normalized audio stats
+            logger.info(f"Normalized audio - min: {np.min(audio_array):.4f}, max: {np.max(audio_array):.4f}, mean: {np.mean(np.abs(audio_array)):.4f}")
+            
+            # Scale to 16-bit range
+            audio_16bit = (audio_array * 32767).astype(np.int16)
             
             # Create temporary WAV file in memory
             timestamp = datetime.now().isoformat()
@@ -277,10 +291,28 @@ class AudioMonitor:
                 wav_file.setframerate(actual_sample_rate)
                 wav_file.writeframes(audio_16bit.tobytes())
             
+            # Log WAV file stats
+            wav_io.seek(0)
+            with wave.open(wav_io, 'rb') as wav_check:
+                wav_frames = wav_check.readframes(wav_check.getnframes())
+                wav_array = np.frombuffer(wav_frames, dtype=np.int16)
+                logger.info(f"WAV file stats - min: {np.min(wav_array)}, max: {np.max(wav_array)}, mean: {np.mean(np.abs(wav_array)):.2f}")
+            
             # Convert to M4A (AAC)
             wav_io.seek(0)
             audio = AudioSegment.from_wav(wav_io)
-            audio.export(filepath, format='ipod', parameters=["-c:a", "aac", "-b:a", "192k"])  # High quality AAC
+            
+            # Log audio segment stats
+            logger.info(f"AudioSegment stats - duration: {len(audio)/1000.0:.2f}s, channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
+            
+            # Export with higher quality settings
+            audio.export(filepath, format='ipod', parameters=[
+                "-c:a", "aac",          # Use AAC codec
+                "-b:a", "192k",         # High bitrate
+                "-ar", str(actual_sample_rate),  # Maintain sample rate
+                "-ac", str(channels),   # Maintain channel count
+                "-af", "volume=1.5"     # Boost volume slightly
+            ])
             
             logger.info(f'Audio saved as M4A: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
