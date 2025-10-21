@@ -13,7 +13,7 @@ import json
 import time
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import numpy as np
@@ -310,7 +310,7 @@ class AudioMonitor:
             audio_16bit = (audio_array * 32767).astype(np.int16)
             
             # Create temporary WAV file in memory
-            timestamp = datetime.now().isoformat()
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:17]  # Local server time
             filename = f'audio_{timestamp}.m4a'
             filepath = f"/tmp/{filename}"
             
@@ -343,7 +343,7 @@ class AudioMonitor:
                 f.write(wav_io.getvalue())
             
             # Create clean timestamp without colons or dots
-            now = datetime.now()
+            now = datetime.now()  # Local server time
             timestamp = now.strftime('%Y%m%d_%H%M%S_%f')[:17]  # Limit microseconds to 3 digits
             filename = f'audio_{timestamp}.m4a'
             filepath = f"/tmp/{filename}"
@@ -420,7 +420,7 @@ class AudioMonitor:
                 'audio': open(test_filepath, 'rb'),
                 'audioName': (None, test_filename),
                 'audioType': (None, 'audio/mpeg'),
-                'dateTime': (None, datetime.now().isoformat()),
+                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]),  # Local server time
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
@@ -475,7 +475,7 @@ class AudioMonitor:
                 'audio': ('test.wav', b'test audio data', 'audio/mpeg'),
                 'audioName': (None, 'test.wav'),
                 'audioType': (None, 'audio/mpeg'),
-                'dateTime': (None, datetime.now().isoformat()),
+                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]),  # Local server time
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
@@ -521,7 +521,7 @@ class AudioMonitor:
                 'audio': open(filepath, 'rb'),
                 'audioName': (None, filename),
                 'audioType': (None, 'audio/mp4'),  # Correct MIME type for M4A
-                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # Proper ISO format with Z
+                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]),  # Local server time without Z suffix
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
