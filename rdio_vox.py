@@ -305,14 +305,42 @@ class AudioMonitor:
             # Log audio segment stats
             logger.info(f"AudioSegment stats - duration: {len(audio)/1000.0:.2f}s, channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
             
-            # Export with higher quality settings
-            audio.export(filepath, format='ipod', parameters=[
-                "-c:a", "aac",          # Use AAC codec
-                "-b:a", "192k",         # High bitrate
-                "-ar", str(actual_sample_rate),  # Maintain sample rate
-                "-ac", str(channels),   # Maintain channel count
-                "-af", "volume=1.5"     # Boost volume slightly
-            ])
+            # First export as WAV
+            temp_wav = "/tmp/temp_audio.wav"
+            audio.export(temp_wav, format="wav")
+            
+            # Convert to M4A using direct ffmpeg command
+            try:
+                import subprocess
+                ffmpeg_cmd = [
+                    "ffmpeg",
+                    "-y",  # Overwrite output file if it exists
+                    "-i", temp_wav,
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-ar", str(actual_sample_rate),
+                    "-ac", str(channels),
+                    "-af", "volume=2.0",  # Increase volume boost
+                    filepath
+                ]
+                subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+                logger.info("FFmpeg conversion successful")
+            except Exception as e:
+                logger.error(f"FFmpeg conversion failed: {e}")
+                # Fallback to pydub if ffmpeg direct command fails
+                audio.export(filepath, format='ipod', parameters=[
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-ar", str(actual_sample_rate),
+                    "-ac", str(channels),
+                    "-af", "volume=2.0"
+                ])
+            finally:
+                # Clean up temporary WAV file
+                try:
+                    os.remove(temp_wav)
+                except:
+                    pass
             
             logger.info(f'Audio saved as M4A: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
