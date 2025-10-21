@@ -168,10 +168,10 @@ class AudioMonitor:
                         # Store audio data if recording
                         if self.is_recording:
                             self.audio_data.append(audio_array.tobytes())
-                            # Log peak level periodically
-                            if len(self.audio_data) % 10 == 0:
+                            # Log peak level once per second (assuming 1024 samples at 44100Hz)
+                            if len(self.audio_data) % 43 == 0:  # ~1 second (44100/1024 ≈ 43)
                                 peak = np.max(np.abs(audio_array))
-                                logger.info(f"Recording levels - peak: {peak:.4f}, RMS: {rms:.4f}")
+                                logger.info(f"Recording peak: {peak:.4f}")
                     except Exception as e:
                         logger.error(f"Error processing audio: {e}")
                         if "Stream closed" in str(e):
