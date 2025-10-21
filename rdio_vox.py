@@ -372,7 +372,7 @@ class AudioMonitor:
                 analyze_cmd = [
                     "ffmpeg",
                     "-i", debug_wav,
-                    "-af", "loudnorm=I=-16:LRA=11:TP=-1.5:print_format=json",
+                    "-af", "loudnorm=I=-14:LRA=11:TP=-2.0:print_format=json",
                     "-f", "null",
                     "-"
                 ]
@@ -385,7 +385,7 @@ class AudioMonitor:
                     "ffmpeg",
                     "-y",
                     "-i", debug_wav,
-                    "-af", "compand=attacks=0.02:decays=0.05:points=-80/-80|-50/-10|0/0|20/20,loudnorm=I=-16:LRA=11:TP=-1.5,volume=3.0",  # Compression, normalization and boost
+                    "-af", "highpass=f=50,lowpass=f=15000,compand=attacks=0.02:decays=0.05:points=-80/-80|-50/-10|0/0|20/20,loudnorm=I=-14:LRA=11:TP=-2.0,volume=2.0",  # Filtering, compression, normalization and boost
                     norm_wav
                 ]
                 subprocess.run(norm_cmd, check=True, capture_output=True)
@@ -402,10 +402,10 @@ class AudioMonitor:
                     "-y",
                     "-i", norm_wav,
                     "-c:a", "aac",
-                    "-b:a", "256k",  # High bitrate for quality
-                    "-ar", str(actual_sample_rate),
+                    "-b:a", "128k",  # Standard bitrate for voice
+                    "-ar", "44100",  # Standard sample rate
                     "-ac", "1",  # Force mono
-                    "-af", "aresample=resampler=soxr:precision=28:osf=s16,volume=3.0",  # High quality resampling and boost
+                    "-profile:a", "aac_low",  # Use AAC-LC for better compatibility
                     "-movflags", "+faststart",  # Optimize for streaming
                     filepath
                 ]
