@@ -245,7 +245,7 @@ class AudioMonitor:
             
             # Create temporary WAV file in memory
             timestamp = datetime.now().isoformat()
-            filename = f'audio_{timestamp}.mp3'
+            filename = f'audio_{timestamp}.m4a'
             filepath = f"/tmp/{filename}"
             
             # Get audio parameters
@@ -261,12 +261,12 @@ class AudioMonitor:
                 wav_file.setframerate(actual_sample_rate)
                 wav_file.writeframes(audio_16bit.tobytes())
             
-            # Convert to MP3
+            # Convert to M4A (AAC)
             wav_io.seek(0)
             audio = AudioSegment.from_wav(wav_io)
-            audio.export(filepath, format='mp3', parameters=["-q:a", "0"])  # Highest quality MP3
+            audio.export(filepath, format='ipod', parameters=["-c:a", "aac", "-b:a", "192k"])  # High quality AAC
             
-            logger.info(f'Audio saved as MP3: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
+            logger.info(f'Audio saved as M4A: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
             # Test with smaller file first if current file is large
             file_size = os.path.getsize(filepath)
@@ -290,8 +290,8 @@ class AudioMonitor:
             api_key = self.config.get('api_key')
             
             # Create a tiny test file
-            test_filepath = "/tmp/tiny_test.mp3"
-            test_filename = "tiny_test.mp3"
+            test_filepath = "/tmp/tiny_test.m4a"
+            test_filename = "tiny_test.m4a"
             
             # Create minimal WAV in memory first
             wav_io = io.BytesIO()
@@ -305,7 +305,7 @@ class AudioMonitor:
             # Convert to MP3
             wav_io.seek(0)
             audio = AudioSegment.from_wav(wav_io)
-            audio.export(test_filepath, format='mp3', parameters=["-q:a", "0"])  # Highest quality MP3
+            audio.export(test_filepath, format='ipod', parameters=["-c:a", "aac", "-b:a", "192k"])  # High quality AAC
             
             logger.info(f"Testing with tiny file: {os.path.getsize(test_filepath)} bytes")
             
@@ -414,7 +414,7 @@ class AudioMonitor:
             files = {
                 'audio': open(filepath, 'rb'),
                 'audioName': (None, filename),
-                'audioType': (None, 'audio/mpeg'),
+                'audioType': (None, 'audio/mp4'),
                 'dateTime': (None, datetime.now().isoformat()),
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
