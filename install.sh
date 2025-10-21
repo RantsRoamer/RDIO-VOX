@@ -45,7 +45,7 @@ echo -e "${YELLOW}Installing system dependencies...${NC}"
 if command -v apt-get &> /dev/null; then
     # Debian/Ubuntu
     apt-get update
-    apt-get install -y python3-pip python3-dev portaudio19-dev libasound2-dev ffmpeg
+    apt-get install -y python3-pip python3-dev portaudio19-dev libasound2-dev ffmpeg libavcodec-extra
 elif command -v yum &> /dev/null; then
     # CentOS/RHEL
     yum install -y python3-pip python3-devel portaudio-devel alsa-lib-devel ffmpeg
