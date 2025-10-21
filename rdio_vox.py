@@ -239,9 +239,11 @@ class AudioMonitor:
             
             audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
             
-            # Convert to 16-bit PCM exactly like pi2rdio.pl
-            # Ensure we don't exceed the 16-bit range
-            audio_16bit = np.clip(audio_array * 32767, -32768, 32767).astype(np.int16)
+            # Normalize and scale to 16-bit range
+            # First ensure audio is in [-1.0, 1.0] range
+            normalized = np.clip(audio_array, -1.0, 1.0)
+            # Then scale to 16-bit range and convert
+            audio_16bit = (normalized * 32767).astype(np.int16)
             
             # Create temporary WAV file in memory
             timestamp = datetime.now().isoformat()
