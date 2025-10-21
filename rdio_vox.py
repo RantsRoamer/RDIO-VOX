@@ -268,12 +268,6 @@ class AudioMonitor:
             
             logger.info(f'Audio saved as M4A: {filepath} (sample rate: {actual_sample_rate} Hz, channels: {channels})')
             
-            # Test with smaller file first if current file is large
-            file_size = os.path.getsize(filepath)
-            if file_size > 50000:  # If file is larger than 50KB
-                logger.info(f"File size {file_size} bytes is large, testing with smaller file first")
-                self._test_small_upload()
-            
             # Upload to server using exact same method as pi2rdio.pl
             self._send_to_server(filepath, filename)
             
