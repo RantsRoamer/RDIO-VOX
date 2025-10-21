@@ -354,12 +354,10 @@ class AudioMonitor:
             # Log audio segment stats
             logger.info(f"AudioSegment stats - duration: {len(audio)/1000.0:.2f}s, channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
             
-            # Save original WAV for debugging
-            debug_wav = "/tmp/debug_audio.wav"
-            audio.export(debug_wav, format="wav")
-            logger.info(f"Saved debug WAV file: {debug_wav}")
+            # Create temporary WAV file
+            temp_wav = "/tmp/temp_audio.wav"
+            audio.export(temp_wav, format="wav")
             
-            # Create MP3 file instead of M4A
             # Create clean timestamp without colons or dots
             now = datetime.now()
             timestamp = now.strftime('%Y%m%d_%H%M%S_%f')[:17]  # Limit microseconds to 3 digits
@@ -368,39 +366,11 @@ class AudioMonitor:
             
             try:
                 import subprocess
-                # First analyze audio levels
-                analyze_cmd = [
-                    "ffmpeg",
-                    "-i", debug_wav,
-                    "-af", "loudnorm=I=-14:LRA=11:TP=-2.0:print_format=json",
-                    "-f", "null",
-                    "-"
-                ]
-                result = subprocess.run(analyze_cmd, capture_output=True, text=True)
-                logger.info(f"Audio analysis: {result.stderr}")
-
-                # Then normalize audio with measured values
-                norm_wav = "/tmp/norm_audio.wav"
-                norm_cmd = [
-                    "ffmpeg",
-                    "-y",
-                    "-i", debug_wav,
-                    "-af", "highpass=f=50,lowpass=f=15000,compand=attacks=0.02:decays=0.05:points=-80/-80|-50/-10|0/0|20/20,loudnorm=I=-14:LRA=11:TP=-2.0,volume=2.0",  # Filtering, compression, normalization and boost
-                    norm_wav
-                ]
-                subprocess.run(norm_cmd, check=True, capture_output=True)
-                logger.info("Audio normalization successful")
-
-                # Verify normalized audio
-                verify_cmd = ["ffprobe", "-v", "error", "-show_streams", "-of", "json", norm_wav]
-                verify_result = subprocess.run(verify_cmd, capture_output=True, text=True)
-                logger.info(f"Normalized audio info: {verify_result.stdout}")
-                
-                # Convert to M4A (AAC) with forced mono and resampling
+                # Convert directly to M4A (AAC)
                 m4a_cmd = [
                     "ffmpeg",
                     "-y",
-                    "-i", norm_wav,
+                    "-i", temp_wav,
                     "-c:a", "aac",
                     "-b:a", "128k",  # Standard bitrate for voice
                     "-ar", "44100",  # Standard sample rate
@@ -433,7 +403,7 @@ class AudioMonitor:
             finally:
                 # Clean up temporary files
                 try:
-                    os.remove(norm_wav)
+                    os.remove(temp_wav)
                 except:
                     pass
             
