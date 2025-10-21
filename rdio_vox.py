@@ -520,8 +520,8 @@ class AudioMonitor:
             files = {
                 'audio': open(filepath, 'rb'),
                 'audioName': (None, filename),
-                'audioType': (None, 'audio/mpeg'),
-                'dateTime': (None, datetime.now().isoformat()),
+                'audioType': (None, 'audio/mp4'),  # Correct MIME type for M4A
+                'dateTime': (None, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'),  # Proper ISO format with Z
                 'frequencies': (None, json.dumps([])),
                 'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
@@ -533,7 +533,11 @@ class AudioMonitor:
                 'talkgroup': (None, self.config.get('talkgroup', '')),
                 'talkgroupGroup': (None, self.config.get('talkgroup_group', '')),
                 'talkgroupLabel': (None, self.config.get('talkgroup_label', '')),
-                'talkgroupTag': (None, self.config.get('talkgroup_tag', ''))
+                'talkgroupTag': (None, self.config.get('talkgroup_tag', '')),
+                'emergency': (None, '0'),  # Add emergency flag
+                'hit': (None, '1'),  # Mark as hit for display
+                'analog': (None, '1'),  # Mark as analog source
+                'phase2': (None, '0')  # Not P25 Phase 2
             }
             
             # Send request with detailed debugging
