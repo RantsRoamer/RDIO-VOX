@@ -136,41 +136,50 @@ class AudioMonitor:
             self.actual_sample_rate = sample_rate
             logger.info(f"PyAudio stream created with sample rate: {sample_rate} Hz")
             
+            # Apply input gain reduction to prevent clipping
+            input_gain = 0.5  # Reduce input level by half
+            
+            def input_callback(in_data, frame_count, time_info, status):
+                # Convert input data to numpy array
+                data = np.frombuffer(in_data, dtype=np.float32)
+                # Apply gain reduction
+                data = data * input_gain
+                return (data.tobytes(), pyaudio.paContinue)
+            
             self.stream = self.pyaudio_instance.open(
                 format=pyaudio.paFloat32,
                 channels=channels,
                 rate=sample_rate,
                 input=True,
                 input_device_index=device_index,
-                frames_per_buffer=chunk_size
+                frames_per_buffer=chunk_size,
+                stream_callback=input_callback
             )
             
             logger.info(f"Monitoring audio: device={device_index}, rate={sample_rate}, channels={channels}")
             
             while self.is_monitoring:
                 try:
-                    # Read audio data
+                    # With callback mode, we just need to check levels
                     try:
+                        # Get latest audio data from callback
                         data = self.stream.read(chunk_size, exception_on_overflow=False)
                         audio_array = np.frombuffer(data, dtype=np.float32)
                         
-                        # Check for completely silent audio
-                        if np.max(np.abs(audio_array)) < 0.0001:
-                            logger.debug("Warning: Near-silent audio chunk detected")
+                        # Calculate RMS level for VOX
+                        rms = np.sqrt(np.mean(audio_array**2))
+                        self.current_level = rms
                         
                         # Store audio data if recording
                         if self.is_recording:
-                            # Verify data is valid
-                            if len(data) != chunk_size * 4:  # 4 bytes per float32
-                                logger.warning(f"Unexpected audio chunk size: {len(data)} bytes")
-                            else:
-                                self.audio_data.append(data)
-                                # Log peak level periodically
-                                if len(self.audio_data) % 10 == 0:
-                                    peak = np.max(np.abs(audio_array))
-                                    logger.info(f"Recording peak level: {peak:.4f}")
+                            self.audio_data.append(data)
+                            # Log peak level periodically
+                            if len(self.audio_data) % 10 == 0:
+                                peak = np.max(np.abs(audio_array))
+                                rms = np.sqrt(np.mean(audio_array**2))
+                                logger.info(f"Recording levels - peak: {peak:.4f}, RMS: {rms:.4f}")
                     except Exception as e:
-                        logger.error(f"Error reading audio chunk: {e}")
+                        logger.error(f"Error processing audio: {e}")
                     
                     # Calculate RMS level
                     rms = np.sqrt(np.mean(audio_array**2))
@@ -400,9 +409,22 @@ class AudioMonitor:
                     "-qscale:a", "0",  # Highest quality VBR
                     "-ar", str(actual_sample_rate),
                     "-ac", "1",  # Force mono
-                    "-af", "aresample=resampler=soxr:precision=28:osf=s16",  # High quality resampling
+                    "-af", "aresample=resampler=soxr:precision=28:osf=s16,volume=3.0",  # High quality resampling and boost
+                    "-write_xing", "0",  # Disable VBR header for better compatibility
+                    "-id3v2_version", "3",  # Use ID3v2.3 for better compatibility
                     filepath
                 ]
+                subprocess.run(mp3_cmd, check=True, capture_output=True)
+                logger.info("MP3 conversion successful")
+                
+                # Verify the MP3 file
+                check_cmd = ["ffmpeg", "-v", "error", "-i", filepath, "-f", "null", "-"]
+                try:
+                    subprocess.run(check_cmd, check=True, capture_output=True)
+                    logger.info("MP3 file verification successful")
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"MP3 file verification failed: {e.stderr.decode()}")
+                    return
                 subprocess.run(mp3_cmd, check=True, capture_output=True)
                 logger.info("MP3 conversion successful")
                 
@@ -440,8 +462,8 @@ class AudioMonitor:
             api_key = self.config.get('api_key')
             
             # Create a tiny test file
-            test_filepath = "/tmp/tiny_test.m4a"
-            test_filename = "tiny_test.m4a"
+            test_filepath = "/tmp/tiny_test.mp3"
+            test_filename = "tiny_test.mp3"
             
             # Create minimal WAV in memory first
             wav_io = io.BytesIO()
@@ -459,25 +481,25 @@ class AudioMonitor:
             
             logger.info(f"Testing with tiny file: {os.path.getsize(test_filepath)} bytes")
             
-            # Test with EXACT pi2rdio.pl format
-            logger.info("Testing with pi2rdio.pl exact format...")
+            # Test with actual configured values
+            logger.info("Testing with configured values...")
             files_pi2rdio = {
                 'audio': open(test_filepath, 'rb'),
                 'audioName': (None, test_filename),
-                'audioType': (None, 'audio/x-wav'),
+                'audioType': (None, 'audio/mpeg'),
                 'dateTime': (None, datetime.now().isoformat()),
                 'frequencies': (None, json.dumps([])),
-                'frequency': (None, '9000000'),
+                'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
                 'patches': (None, json.dumps([])),
-                'source': (None, '82828'),
+                'source': (None, self.config.get('source', '')),
                 'sources': (None, json.dumps([])),
-                'system': (None, '9999'),
-                'systemLabel': (None, 'Test'),
-                'talkgroup': (None, '51175'),
-                'talkgroupGroup': (None, 'Test Group'),
-                'talkgroupLabel': (None, 'Test Label'),
-                'talkgroupTag': (None, 'Test Tag')
+                'system': (None, self.config.get('system', '')),
+                'systemLabel': (None, self.config.get('system_label', '')),
+                'talkgroup': (None, self.config.get('talkgroup', '')),
+                'talkgroupGroup': (None, self.config.get('talkgroup_group', '')),
+                'talkgroupLabel': (None, self.config.get('talkgroup_label', '')),
+                'talkgroupTag': (None, self.config.get('talkgroup_tag', ''))
             }
             
             response = requests.post(f"{server_url}/api/call-upload", files=files_pi2rdio, timeout=10)
@@ -486,12 +508,13 @@ class AudioMonitor:
             
             files_pi2rdio['audio'].close()
             
-            # Test with minimal fields only
-            logger.info("Testing with minimal fields only...")
+            # Test with minimal required fields
+            logger.info("Testing with minimal required fields...")
             files_minimal = {
                 'audio': open(test_filepath, 'rb'),
                 'key': (None, api_key),
-                'talkgroup': (None, '51175')
+                'system': (None, self.config.get('system', '')),
+                'talkgroup': (None, self.config.get('talkgroup', ''))
             }
             
             response = requests.post(f"{server_url}/api/call-upload", files=files_minimal, timeout=10)
@@ -514,24 +537,24 @@ class AudioMonitor:
                 logger.error("Server URL or API key not configured")
                 return False
             
-            # Test with a minimal request (exactly like pi2rdio.pl format)
+            # Test with actual configuration
             test_files = {
-                'audio': ('test.wav', b'test audio data', 'audio/x-wav'),
+                'audio': ('test.wav', b'test audio data', 'audio/mpeg'),
                 'audioName': (None, 'test.wav'),
-                'audioType': (None, 'audio/x-wav'),
-                'dateTime': (None, '2025-10-18T22:01:00.000Z'),
+                'audioType': (None, 'audio/mpeg'),
+                'dateTime': (None, datetime.now().isoformat()),
                 'frequencies': (None, json.dumps([])),
-                'frequency': (None, '9000000'),
+                'frequency': (None, self.config.get('frequency', '')),
                 'key': (None, api_key),
                 'patches': (None, json.dumps([])),
-                'source': (None, '82828'),
+                'source': (None, self.config.get('source', '')),
                 'sources': (None, json.dumps([])),
-                'system': (None, '9999'),
-                'systemLabel': (None, 'Test'),
-                'talkgroup': (None, '51175'),
-                'talkgroupGroup': (None, 'Test Group'),
-                'talkgroupLabel': (None, 'Test Label'),
-                'talkgroupTag': (None, 'Test Tag')
+                'system': (None, self.config.get('system', '')),
+                'systemLabel': (None, self.config.get('system_label', '')),
+                'talkgroup': (None, self.config.get('talkgroup', '')),
+                'talkgroupGroup': (None, self.config.get('talkgroup_group', '')),
+                'talkgroupLabel': (None, self.config.get('talkgroup_label', '')),
+                'talkgroupTag': (None, self.config.get('talkgroup_tag', ''))
             }
             
             logger.info(f"Testing server connection to {server_url}")
