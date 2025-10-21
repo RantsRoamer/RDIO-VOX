@@ -62,6 +62,8 @@ class AudioMonitor:
         self.monitoring_thread = None
         self.pyaudio_instance = None
         self.stream = None
+        self.recording_start_time = None
+        self.min_recording_duration = 1.0  # Minimum recording duration in seconds
         
     def get_audio_devices(self) -> List[Dict]:
         """Get list of available audio devices"""
@@ -165,14 +167,16 @@ class AudioMonitor:
                     else:
                         db_level = -100
                     
-                    # Check VOX threshold
-                    if rms > vox_threshold and not self.is_recording:
-                        logger.info(f"VOX triggered: {rms:.4f} > {vox_threshold}")
-                        self._start_recording()
-                    
-                    # Stop recording if level drops below threshold
-                    elif self.is_recording and rms < vox_threshold * 0.5:
-                        self._stop_recording()
+                    # Check VOX threshold with hysteresis
+                    if not self.is_recording:
+                        # Higher threshold to start recording (avoid false triggers)
+                        if rms > vox_threshold * 1.2:  # 20% higher threshold to start
+                            logger.info(f"VOX triggered: {rms:.4f} > {vox_threshold * 1.2:.4f}")
+                            self._start_recording()
+                    else:
+                        # Lower threshold to maintain recording (prevent choppy audio)
+                        if rms < vox_threshold * 0.4:  # 60% lower threshold to stop
+                            self._stop_recording()
                         
                 except Exception as e:
                     logger.error(f"Error in audio monitoring: {e}")
@@ -198,6 +202,7 @@ class AudioMonitor:
             
         self.is_recording = True
         self.audio_data = []
+        self.recording_start_time = time.time()
         self.recording_thread = threading.Thread(target=self._record_audio)
         self.recording_thread.daemon = True
         self.recording_thread.start()
@@ -206,6 +211,15 @@ class AudioMonitor:
     def _stop_recording(self):
         """Stop recording and upload audio"""
         if not self.is_recording:
+            return
+            
+        # Check if minimum duration has elapsed
+        if self.recording_start_time and time.time() - self.recording_start_time < self.min_recording_duration:
+            logger.info(f"Recording too short (< {self.min_recording_duration}s), discarding")
+            self.is_recording = False
+            self.audio_data = []
+            if self.recording_thread:
+                self.recording_thread.join()
             return
             
         self.is_recording = False
