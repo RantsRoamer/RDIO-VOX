@@ -311,7 +311,9 @@ class AudioMonitor:
             logger.info(f"Saved debug WAV file: {debug_wav}")
             
             # Create MP3 file instead of M4A
-            timestamp = datetime.now().isoformat()
+            # Create clean timestamp without colons or dots
+            now = datetime.now()
+            timestamp = now.strftime('%Y%m%d_%H%M%S_%f')
             filename = f'audio_{timestamp}.mp3'
             filepath = f"/tmp/{filename}"
             
